@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Fonctions de validation
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAuthorizedEmail() {
+      return exists(/databases/$(database)/documents/authorizedEmails/$(request.auth.token.email));
+    }
+    
+    function isValidProject() {
+      return request.resource.data.name is string &&
+             request.resource.data.name.size() > 0 &&
+             request.resource.data.siteUrl is string &&
+             request.resource.data.githubUrl is string;
+    }
+    
+    // Règles pour les emails autorisés
+    match /authorizedEmails/{email} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAuthorizedEmail();
+    }
+    
+    // Règles pour les projets
+    match /projects/{projectId} {
+      allow read: if isAuthenticated() && isAuthorizedEmail();
+      allow create: if isAuthenticated() && 
+                   isAuthorizedEmail() && 
+                   isValidProject() &&
+                   request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isAuthenticated() && 
+                          isAuthorizedEmail() &&
+                          resource.data.createdBy == request.auth.uid;
+      
+      // Règles pour les messages dans les projets
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && isAuthorizedEmail();
+        allow create: if isAuthenticated() && 
+                     isAuthorizedEmail() &&
+                     request.resource.data.userId == request.auth.uid &&
+                     request.resource.data.text is string &&
+                     request.resource.data.text.size() > 0;
+      }
+    }
+  }
+} 
